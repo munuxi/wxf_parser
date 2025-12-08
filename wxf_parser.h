@@ -1283,13 +1283,8 @@ namespace WXF_PARSER {
 			}
 			std::string_view name = expr.head_.get_value();
 
-			// rule is special, its length is always 2 and omited by WXF encoder
-			if (name == "Rule")
-				encoder.push_rule();
-			else if (name == "RuleDelayed")
-				encoder.push_delay_rule();
-			else
-				encoder.push_function(name, len);
+			// Rule or DelayRule is not special in FullForm, we treat them as normal functions
+			encoder.push_function(name, len);
 
 			for (size_t i = 0; i < len; i++) {
 				fullform_to_wxf(encoder, expr.args_[i], map);
