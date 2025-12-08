@@ -702,106 +702,54 @@ namespace WXF_PARSER {
 		}
 	};
 
-	struct ExprNode {
+	struct expr_node {
 		size_t index; // the index of the token in the tokens vector
-		size_t size; // the size of the children
-		std::unique_ptr<ExprNode[]> children; // the children of the node
+		std::vector<expr_node> children;
 		WXF_HEAD type;
 
-		ExprNode() : index(0), size(0), children(nullptr), type(WXF_HEAD::i8) {} // default constructor
+		expr_node() : index(0), children(), type(WXF_HEAD::i8) {} // default constructor
+		~expr_node() = default;
 
-		ExprNode(size_t idx, size_t sz, WXF_HEAD t) : index(idx), size(sz), type(t) {
-			constexpr size_t MAX_ALLOC = std::numeric_limits<int64_t>::max();
-			if (size > MAX_ALLOC) {
-				throw std::bad_alloc();
-			}
-			else if (size > 0) {
-				children = std::make_unique<ExprNode[]>(size);
-			}
+		expr_node(const expr_node&) = default; // copy constructor
+		expr_node& operator=(const expr_node&) = default; // copy assignment operator
+		expr_node(expr_node&& other) = default; // move constructor
+		expr_node& operator=(expr_node&& other) = default; // move assignment operator
+
+		expr_node(size_t idx, size_t sz, WXF_HEAD t) : index(idx), type(t) {
+			if (sz > 0) 
+				children.resize(sz);
 		}
 
-		ExprNode(const ExprNode&) = delete; // disable copy constructor
-		ExprNode& operator=(const ExprNode&) = delete; // disable copy assignment operator
-		// move constructor
-		ExprNode(ExprNode&& other) noexcept : index(other.index), size(other.size),
-			children(std::move(other.children)), type(other.type) {
-			other.index = 0;
-			other.size = 0;
-			other.children = nullptr;
-			other.type = WXF_HEAD::i8;
-		}
-
-		// move assignment operator
-		ExprNode& operator=(ExprNode&& other) noexcept {
-			if (this != &other) {
-				index = other.index;
-				size = other.size;
-				children = std::move(other.children);
-				type = other.type;
-				other.size = 0;
-				other.index = 0;
-				other.children = nullptr;
-				other.type = WXF_HEAD::i8;
-			}
-			return *this;
-		}
-
-		// destructor
-		void clear() {
-			index = 0;
-			size = 0;
-			type = WXF_HEAD::i8;
-			if (children) {
-				children.reset();
-			}
-		}
-
-		~ExprNode() { clear(); }
-		bool has_children() const { return size > 0; }
-		const ExprNode& operator[] (size_t i) const { return children[i]; }
-		ExprNode& operator[] (size_t i) { return children[i]; }
+		size_t size() const { return children.size(); }
+		bool has_children() const { return children.size() > 0; }
+		const expr_node& operator[] (size_t i) const { return children[i]; }
+		expr_node& operator[] (size_t i) { return children[i]; }
 	};
 
-	struct ExprTree {
+	struct expr_tree {
 		std::vector<Token> tokens;
-		ExprNode root;
+		expr_node root;
 
-		ExprTree() {} // default constructor
-		ExprTree(Parser parser, size_t index, size_t size, WXF_HEAD type) : root(index, size, type) {
+		expr_tree() {} // default constructor
+		expr_tree(Parser parser, size_t index, size_t size, WXF_HEAD type) : root(index, size, type) {
 			tokens = std::move(parser.tokens);
 		}
 
-		ExprTree(const ExprTree&) = delete; // disable copy constructor
-		ExprTree& operator=(const ExprTree&) = delete; // disable copy assignment operator
+		expr_tree(const expr_tree&) = default; //  copy constructor
+		expr_tree& operator=(const expr_tree&) = default; // copy assignment operator
+		expr_tree(expr_tree&&) noexcept = default; // move constructor
+		expr_tree& operator=(expr_tree&&) noexcept = default; // move assignment operator
+		~expr_tree() = default;
 
-		// move constructor
-		ExprTree(ExprTree&& other) noexcept : tokens(std::move(other.tokens)), root(std::move(other.root)) {
-			other.root.size = 0;
-			other.root.index = 0;
-			other.root.children = nullptr;
-		}
-
-		// move assignment operator
-		ExprTree& operator=(ExprTree&& other) noexcept {
-			if (this != &other) {
-				tokens = std::move(other.tokens);
-				root = std::move(other.root);
-				other.root.size = 0;
-				other.root.index = 0;
-				other.root.children = nullptr;
-			}
-			return *this;
-		}
-
-		const Token& operator[](const ExprNode& node) const {
+		const Token& operator[](const expr_node& node) const {
 			return tokens[node.index];
 		}
 
-		void print(std::ostream& ss, const ExprNode& node, const int level = 0) const {
+		void print(std::ostream& ss, const expr_node& node, const int level = 0) const {
 			for (int i = 0; i < level; i++)
 				ss << "  ";
-			ss << "Node type: " << (int)node.type << ", index: " << node.index << ", size: " << node.size << std::endl;
-			for (size_t i = 0; i < node.size; i++) {
+			ss << "Node type: " << (int)node.type << ", index: " << node.index << ", size: " << node.size() << std::endl;
+			for (size_t i = 0; i < node.size(); i++) {
 				print(ss, node.children[i], level + 1);
 			}
 		}
@@ -815,8 +763,8 @@ namespace WXF_PARSER {
 		}
 	};
 
-	inline ExprTree MakeExprTree(Parser& parser) {
-		ExprTree tree;
+	inline expr_tree make_expr_tree(Parser& parser) {
+		expr_tree tree;
 		if (parser.err != 0)
 			return tree;
 
@@ -825,7 +773,7 @@ namespace WXF_PARSER {
 		auto total_len = tree.tokens.size();
 		auto& tokens = tree.tokens;
 
-		std::vector<ExprNode*> expr_stack; // the stack to store the current father nodes
+		std::vector<expr_node*> expr_stack; // the stack to store the current father nodes
 		std::vector<size_t> node_stack; // the vector to store the node index
 
 		std::function<void(void)> move_to_next_node = [&]() {
@@ -833,7 +781,7 @@ namespace WXF_PARSER {
 				return;
 
 			node_stack.back()++; // move to the next node
-			if (node_stack.back() >= expr_stack.back()->size) {
+			if (node_stack.back() >= expr_stack.back()->size()) {
 				expr_stack.pop_back(); // pop the current node
 				node_stack.pop_back(); // pop the current node index
 				move_to_next_node();
@@ -845,17 +793,17 @@ namespace WXF_PARSER {
 		auto& token = tokens[pos];
 		if (token.type == WXF_HEAD::func) {
 			// i + 1 is the head of the function (a symbol)
-			tree.root = ExprNode(pos + 1, token.length, token.type);
+			tree.root = expr_node(pos + 1, token.length, token.type);
 			pos += 2; // skip the head
 		}
 		else if (token.type == WXF_HEAD::association) {
 			// association does not have a head
-			tree.root = ExprNode(pos + 1, token.length, token.type);
+			tree.root = expr_node(pos + 1, token.length, token.type);
 			pos += 1;
 		}
 		else {
 			// if the token is not a function type, only one token is allowed
-			tree.root = ExprNode(pos, 0, token.type);
+			tree.root = expr_node(pos, 0, token.type);
 			return tree;
 		}
 
@@ -871,11 +819,11 @@ namespace WXF_PARSER {
 				auto parent = expr_stack.back();
 				auto& node = parent->children[node_pos];
 				if (token.type == WXF_HEAD::func) {
-					node = ExprNode(pos + 1, token.length, token.type);
+					node = expr_node(pos + 1, token.length, token.type);
 					pos++; // skip the head
 				}
 				else
-					node = ExprNode(pos, token.length, token.type);
+					node = expr_node(pos, token.length, token.type);
 				expr_stack.push_back(&(node)); // push the new node to the stack
 				node_stack.push_back(0); // push the new node index to the stack
 			}
@@ -884,7 +832,7 @@ namespace WXF_PARSER {
 				auto node_pos = node_stack.back();
 				auto parent = expr_stack.back();
 				auto& node = parent->children[node_pos];
-				node = ExprNode(pos, 2, token.type);
+				node = expr_node(pos, 2, token.type);
 				expr_stack.push_back(&(node)); // push the new node to the stack
 				node_stack.push_back(0); // push the new node index to the stack
 			}
@@ -893,7 +841,7 @@ namespace WXF_PARSER {
 				auto node_pos = node_stack.back();
 				auto parent = expr_stack.back();
 				auto& node = parent->children[node_pos];
-				node = ExprNode(pos, 0, token.type);
+				node = expr_node(pos, 0, token.type);
 
 				move_to_next_node();
 			}
@@ -901,30 +849,27 @@ namespace WXF_PARSER {
 
 		if (!node_stack.empty()) {
 			std::cerr << "Error: not all nodes are parsed" << std::endl;
-			for (auto& node : expr_stack) {
-				node->clear();
-			}
 		}
 
 		return tree;
 	}
 
-	inline ExprTree MakeExprTree(const uint8_t* str, const size_t len) {
+	inline expr_tree make_expr_tree(const uint8_t* str, const size_t len) {
 		Parser parser(str, len);
 		parser.parse();
-		return MakeExprTree(parser);
+		return make_expr_tree(parser);
 	}
 
-	inline ExprTree MakeExprTree(const std::vector<uint8_t>& str) {
+	inline expr_tree make_expr_tree(const std::vector<uint8_t>& str) {
 		Parser parser(str);
 		parser.parse();
-		return MakeExprTree(parser);
+		return make_expr_tree(parser);
 	}
 
-	inline ExprTree MakeExprTree(const std::string_view str) {
+	inline expr_tree make_expr_tree(const std::string_view str) {
 		Parser parser(str);
 		parser.parse();
-		return MakeExprTree(parser);
+		return make_expr_tree(parser);
 	}
 
 } // namespace WXF_PARSER

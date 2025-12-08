@@ -61,7 +61,7 @@ C++ usage:
 							116, 105, 111, 110, 97, 108, 67, 252, 73, 26, 51, 51, 51, 51, 51, 51, \
 							51, 51, 51, 51, 51, 51, 51, 51, 52, 52, 52, 51, 51, 51, 51, 51, 51, \
 							51, 51, 53 };
-	auto tree = WXF_PARSER::MakeExprTree(test);
+	auto tree = WXF_PARSER::make_expr_tree(test);
 	for (const auto& token : tree.tokens) {
 		token.print();
 	};
